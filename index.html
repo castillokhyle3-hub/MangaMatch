@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MangaMatch Colorizer</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  background: #11121b;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+main {
+  max-width: 650px;
+  margin: auto;
+}
+h1 { text-align: center; color: #b69aff; }
+.subtitle { text-align: center; color: #aaa; }
+.panel {
+  background: #202130;
+  padding: 18px;
+  margin: 18px 0;
+  border-radius: 14px;
+}
+label { display: block; margin-bottom: 12px; }
+input { width: 100%; margin-top: 10px; }
+.preview {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  margin-top: 15px;
+  border-radius: 10px;
+  display: none;
+}
+button {
+  width: 100%;
+  padding: 15px;
+  border: 0;
+  border-radius: 10px;
+  background: #9a78ed;
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+}
+#status {
+  text-align: center;
+  color: #c5b5ff;
+  margin-top: 15px;
+}
+footer {
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+  margin-top: 30px;
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>🎨 MangaMatch</h1>
+  <p class="subtitle">Bring your manga to life with anime colors.</p>
+
+  <section class="panel">
+    <h3>1. Upload your manga</h3>
+    <label>
+      Black-and-white manga image
+      <input type="file" id="manga" accept="image/png,image/jpeg,image/webp">
+    </label>
+    <img id="mangaPreview" class="preview" alt="Manga preview">
+  </section>
+
+  <section class="panel">
+    <h3>2. Upload your anime reference</h3>
+    <label>
+      Colored anime screenshot
+      <input type="file" id="reference" accept="image/png,image/jpeg,image/webp">
+    </label>
+    <img id="referencePreview" class="preview" alt="Reference preview">
+  </section>
+
+  <section class="panel">
+    <h3>3. Colorization</h3>
+    <p>Upload both images to prepare your coloring project.</p>
+    <button id="colorize">Prepare images</button>
+    <p id="status">Waiting for images...</p>
+  </section>
+
+  <footer>
+    MangaMatch · Reference-based manga coloring
+  </footer>
+</main>
+
+<script>
+function preview(inputId, previewId) {
+  const input = document.getElementById(inputId);
+  const img = document.getElementById(previewId);
+
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/") ||
+        file.size > 10 * 1024 * 1024) {
+      alert("Choose an image under 10 MB.");
+      input.value = "";
+      return;
+    }
+
+    img.src = URL.createObjectURL(file);
+    img.style.display = "block";
+  });
+}
+
+preview("manga", "mangaPreview");
+preview("reference", "referencePreview");
+
+document.getElementById("colorize").onclick = () => {
+  const manga = document.getElementById("manga").files[0];
+  const ref = document.getElementById("reference").files[0];
+  const status = document.getElementById("status");
+
+  if (!manga || !ref) {
+    status.textContent = "Please upload both images first.";
+    return;
+  }
+
+  status.textContent =
+    "Images ready! The AI coloring engine will be connected in a later step.";
+};
+</script>
+</body>
+</html>
