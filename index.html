@@ -18,7 +18,7 @@ body {
 }
 
 main {
-  max-width: 650px;
+  max-width: 700px;
   margin: auto;
 }
 
@@ -44,17 +44,8 @@ input {
   margin-top: 12px;
 }
 
-.preview {
-  width: 100%;
-  max-height: 320px;
-  object-fit: contain;
-  margin-top: 15px;
-  border-radius: 10px;
-  display: none;
-}
-
 button {
-  padding: 12px;
+  padding: 10px;
   border: 0;
   border-radius: 9px;
   background: #9a78ed;
@@ -68,11 +59,55 @@ button {
   font-size: 16px;
 }
 
-#palette {
+.remove-button {
+  background: #684b72;
+  font-size: 12px;
+}
+
+.preview {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  margin-top: 15px;
+  border-radius: 10px;
+  display: none;
+}
+
+#mangaPreview {
+  display: none;
+}
+
+.reference-card {
+  background: #303143;
+  padding: 12px;
+  border-radius: 12px;
+  margin-top: 14px;
+}
+
+.reference-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.reference-image {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  margin-top: 10px;
+  border-radius: 8px;
+}
+
+#references {
+  margin-top: 15px;
+}
+
+#palette, .individual-palette {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .swatch {
@@ -82,7 +117,7 @@ button {
 }
 
 .color-box {
-  height: 65px;
+  height: 60px;
 }
 
 .color-info {
@@ -99,7 +134,7 @@ button {
   font-size: 11px;
 }
 
-#status {
+#status, #combinedStatus {
   text-align: center;
   color: #c5b5ff;
 }
@@ -125,40 +160,73 @@ Reference-based manga color studio
 <h3>1. Upload your manga</h3>
 <input type="file" id="manga"
 accept="image/png,image/jpeg,image/webp">
+
 <img id="mangaPreview" class="preview"
 alt="Manga preview">
 </section>
 
 <section class="panel">
-<h3>2. Upload your anime reference</h3>
+<h3>2. Upload anime references</h3>
+<p>
+Upload multiple images of the same character.
+Different angles and views can provide more color information.
+</p>
+
 <input type="file" id="reference"
-accept="image/png,image/jpeg,image/webp">
-<img id="referencePreview" class="preview"
-alt="Anime reference preview">
+accept="image/png,image/jpeg,image/webp"
+multiple>
+
+<p id="referenceCount">
+No reference images added.
+</p>
+
+<div id="references"></div>
 </section>
 
 <section class="panel">
 <h3>3. Anime color analyzer</h3>
 <p>
-Extract the most prominent colors from your
-anime reference image.
+Analyze every reference separately and create
+one combined palette.
 </p>
 
 <button class="main-button" id="analyze">
-Analyze colors
+Analyze all references
 </button>
 
-<p id="status">Waiting for reference image...</p>
+<p id="status">Waiting for reference images...</p>
+
+</section>
+
+<section class="panel">
+<h3>4. Individual palettes</h3>
+<p>
+Each reference gets its own set of extracted colors.
+</p>
+
+<div id="individualResults"></div>
+</section>
+
+<section class="panel">
+<h3>5. Combined color palette</h3>
+<p>
+Colors collected from all your references.
+</p>
+
+<p id="combinedStatus">
+No combined palette yet.
+</p>
 
 <div id="palette"></div>
 </section>
 
 <section class="panel">
-<h3>4. Colorization</h3>
+<h3>6. Colorization</h3>
 <p>
-Your images and palette will be prepared for
-reference-based manga coloring.
+Your manga and reference palettes can be prepared
+for future reference-based coloring.
 </p>
+
 <p id="colorStatus">
 AI coloring engine not connected yet.
 </p>
@@ -174,43 +242,167 @@ MangaMatch · Free Color Studio
 const mangaInput = document.getElementById("manga");
 const refInput = document.getElementById("reference");
 
-function preview(input, image) {
-  input.addEventListener("change", () => {
-    const file = input.files[0];
+const references = [];
+let nextId = 1;
+
+const allowedTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp"
+];
+
+function previewManga() {
+  mangaInput.addEventListener("change", () => {
+    const file = mangaInput.files[0];
+    const img = document.getElementById("mangaPreview");
+
     if (!file) return;
 
-    if (!file.type.startsWith("image/") ||
+    if (!allowedTypes.includes(file.type) ||
         file.size > 10 * 1024 * 1024) {
-      alert("Please choose an image under 10 MB.");
-      input.value = "";
+      alert("Choose a PNG, JPG, or WEBP image under 10 MB.");
+      mangaInput.value = "";
       return;
     }
 
-    image.src = URL.createObjectURL(file);
-    image.style.display = "block";
+    img.src = URL.createObjectURL(file);
+    img.style.display = "block";
   });
 }
 
-preview(mangaInput,
-  document.getElementById("mangaPreview"));
+previewManga();
 
-preview(refInput,
-  document.getElementById("referencePreview"));
+function renderReferences() {
+  const container = document.getElementById("references");
+  const count = document.getElementById("referenceCount");
 
-function getColors(img) {
+  container.innerHTML = "";
+
+  count.textContent =
+    references.length + " of 10 reference images added.";
+
+  references.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "reference-card";
+
+    const header = document.createElement("div");
+    header.className = "reference-header";
+
+    const name = document.createElement("strong");
+    name.textContent = item.file.name;
+
+    const remove = document.createElement("button");
+    remove.className = "remove-button";
+    remove.textContent = "Remove";
+
+    remove.onclick = () => {
+      URL.revokeObjectURL(item.url);
+
+      const index = references.findIndex(
+        ref => ref.id === item.id
+      );
+
+      if (index !== -1) {
+        references.splice(index, 1);
+      }
+
+      clearResults();
+      renderReferences();
+    };
+
+    const image = document.createElement("img");
+    image.className = "reference-image";
+    image.src = item.url;
+    image.alt = "Reference image";
+
+    const result = document.createElement("div");
+    result.id = "individual-" + item.id;
+
+    header.append(name, remove);
+    card.append(header, image, result);
+    container.appendChild(card);
+  });
+}
+
+function clearResults() {
+  document.getElementById("individualResults").innerHTML = "";
+  document.getElementById("palette").innerHTML = "";
+
+  document.getElementById("status").textContent =
+    "References changed. Analyze again.";
+
+  document.getElementById("combinedStatus").textContent =
+    "No combined palette yet.";
+}
+
+refInput.addEventListener("change", () => {
+  const files = Array.from(refInput.files);
+
+  let added = 0;
+
+  files.forEach(file => {
+    if (references.length >= 10) {
+      alert("You can add up to 10 reference images.");
+      return;
+    }
+
+    if (!allowedTypes.includes(file.type) ||
+        file.size > 10 * 1024 * 1024) {
+      alert(file.name +
+        " is not supported or is larger than 10 MB.");
+      return;
+    }
+
+    references.push({
+      id: nextId++,
+      file: file,
+      url: URL.createObjectURL(file)
+    });
+
+    added++;
+  });
+
+  if (added > 0) {
+    clearResults();
+  }
+
+  renderReferences();
+
+  refInput.value = "";
+});
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(
+      new Error("Image could not be loaded.")
+    );
+
+    img.src = url;
+  });
+}
+
+// Count colors from an image.
+function getColorCounts(img) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", {
     willReadFrequently: true
   });
 
-  const scale = Math.min(1, 100 / Math.max(
-    img.naturalWidth, img.naturalHeight
-  ));
+  const scale = Math.min(
+    1,
+    100 / Math.max(img.naturalWidth, img.naturalHeight)
+  );
 
-  canvas.width = Math.max(1,
-    Math.round(img.naturalWidth * scale));
-  canvas.height = Math.max(1,
-    Math.round(img.naturalHeight * scale));
+  canvas.width = Math.max(
+    1, Math.round(img.naturalWidth * scale)
+  );
+
+  canvas.height = Math.max(
+    1, Math.round(img.naturalHeight * scale)
+  );
 
   ctx.drawImage(img, 0, 0,
     canvas.width, canvas.height);
@@ -224,26 +416,23 @@ function getColors(img) {
   for (let i = 0; i < pixels.length; i += 4) {
     if (pixels[i + 3] < 128) continue;
 
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
+    const r = Math.floor(pixels[i] / 16) * 16;
+    const g = Math.floor(pixels[i + 1] / 16) * 16;
+    const b = Math.floor(pixels[i + 2] / 16) * 16;
 
-    // Group similar colors into one bucket.
-    const qr = Math.floor(r / 16) * 16;
-    const qg = Math.floor(g / 16) * 16;
-    const qb = Math.floor(b / 16) * 16;
-
-    const key = [qr, qg, qb].join(",");
+    const key = [r, g, b].join(",");
 
     counts[key] = (counts[key] || 0) + 1;
   }
 
+  return counts;
+}
+
+function topColors(counts) {
   return Object.entries(counts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
-    .map(([key]) => {
-      return key.split(",").map(Number);
-    });
+    .map(([key]) => key.split(",").map(Number));
 }
 
 function toHex(rgb) {
@@ -252,72 +441,120 @@ function toHex(rgb) {
   ).join("").toUpperCase();
 }
 
-document.getElementById("analyze").onclick = () => {
-  const file = refInput.files[0];
+function renderPalette(container, colors) {
+  container.innerHTML = "";
+
+  colors.forEach((rgb, index) => {
+    const hex = toHex(rgb);
+
+    const card = document.createElement("div");
+    card.className = "swatch";
+
+    const colorBox = document.createElement("div");
+    colorBox.className = "color-box";
+    colorBox.style.backgroundColor = hex;
+
+    const info = document.createElement("div");
+    info.className = "color-info";
+
+    const label = document.createElement("span");
+    label.textContent =
+      "Color " + (index + 1) + " · " + hex;
+
+    const copy = document.createElement("button");
+    copy.textContent = "Copy";
+
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(hex);
+        copy.textContent = "Copied!";
+      } catch {
+        copy.textContent = hex;
+      }
+    };
+
+    info.append(label, copy);
+    card.append(colorBox, info);
+    container.appendChild(card);
+  });
+}
+
+document.getElementById("analyze").onclick =
+async () => {
   const status = document.getElementById("status");
-  const palette = document.getElementById("palette");
+  const combinedStatus =
+    document.getElementById("combinedStatus");
 
-  if (!file) {
+  const combinedPalette =
+    document.getElementById("palette");
+
+  const individualResults =
+    document.getElementById("individualResults");
+
+  if (references.length === 0) {
     status.textContent =
-      "Upload an anime reference first.";
+      "Please upload at least one reference image.";
     return;
   }
 
-  const img = document.getElementById("referencePreview");
+  status.textContent = "Analyzing references...";
+  combinedStatus.textContent = "Working...";
+  combinedPalette.innerHTML = "";
+  individualResults.innerHTML = "";
 
-  if (!img.complete || !img.naturalWidth) {
-    status.textContent = "Please wait for the image to load.";
-    return;
-  }
+  const combinedCounts = {};
 
   try {
-    const colors = getColors(img);
-    palette.innerHTML = "";
+    for (const item of references) {
+      const img = await loadImage(item.url);
+      const counts = getColorCounts(img);
 
-    colors.forEach((rgb, index) => {
-      const hex = toHex(rgb);
+      // Individual palette
+      const individualColors = topColors(counts);
 
-      const card = document.createElement("div");
-      card.className = "swatch";
+      const result = document.createElement("div");
+      result.className = "reference-card";
 
-      const colorBox = document.createElement("div");
-      colorBox.className = "color-box";
-      colorBox.style.backgroundColor = hex;
+      const heading = document.createElement("strong");
+      heading.textContent =
+        "Reference " + item.id + " · " + item.file.name;
 
-      const info = document.createElement("div");
-      info.className = "color-info";
+      const palette = document.createElement("div");
+      palette.className = "individual-palette";
 
-      const label = document.createElement("span");
-      label.textContent = "Color " + (index + 1)
-        + " · " + hex;
+      result.append(heading, palette);
+      individualResults.appendChild(result);
 
-      const copy = document.createElement("button");
-      copy.textContent = "Copy";
+      renderPalette(palette, individualColors);
 
-      copy.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(hex);
-          copy.textContent = "Copied!";
-        } catch {
-          copy.textContent = hex;
-        }
-      };
+      // Add this reference's color counts to the combined palette.
+      Object.entries(counts).forEach(([key, amount]) => {
+        combinedCounts[key] =
+          (combinedCounts[key] || 0) + amount;
+      });
+    }
 
-      info.append(label, copy);
-      card.append(colorBox, info);
-      palette.appendChild(card);
-    });
+    const combinedColors = topColors(combinedCounts);
+
+    renderPalette(combinedPalette, combinedColors);
 
     status.textContent =
-      "Analysis complete! " + colors.length +
-      " prominent colors extracted.";
+      "Success! " + references.length +
+      " individual reference palettes created.";
+
+    combinedStatus.textContent =
+      "Combined palette created from " +
+      references.length + " references.";
 
   } catch (error) {
     status.textContent =
-      "Could not analyze this image. Try another.";
+      "Some images could not be analyzed. Try again.";
+    combinedStatus.textContent =
+      "Combined analysis was not completed.";
   }
 };
 </script>
 
 </body>
-</html>
+  </html>
+  
