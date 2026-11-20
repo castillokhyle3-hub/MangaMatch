@@ -6,6 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MangaMatch Colorizer</title>
 
+#regionResults {
+
+  
 <style>
 * { box-sizing: border-box; }
 
@@ -160,6 +163,33 @@ footer {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+  
+#regionResults {
+  margin-top: 15px;
+}
+
+.region-card {
+  background: #303143;
+  padding: 12px;
+  border-radius: 12px;
+  margin-top: 14px;
+}
+
+.region-canvas {
+  width: 100%;
+  height: auto;
+  margin-top: 12px;
+  border-radius: 8px;
+  background: #11121b;
+}
+
+.region-info {
+  font-size: 12px;
+  color: #c5b5ff;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+  
 </style>
 </head>
 
@@ -226,6 +256,30 @@ Analyze all references
 <p id="status">Waiting for reference images...</p>
 </section>
 
+<section class="panel">
+<h3>4. Color Region Detection</h3>
+
+<p>
+Detect connected color areas in your anime references
+or manga image.
+</p>
+
+<button class="main-button" id="detectManga">
+Detect manga regions
+</button>
+
+<button class="main-button" id="detectAnime"
+style="margin-top:10px;">
+Detect anime reference regions
+</button>
+
+<p id="regionStatus">
+Waiting for an image to analyze.
+</p>
+
+<div id="regionResults"></div>
+</section>
+  
 <section class="panel">
 <h3>4. Individual palettes</h3>
 <p>
@@ -677,6 +731,306 @@ async () => {
       "Combined analysis was not completed.";
   }
 };
+  
+// =====================================
+// MANGAMATCH COLOR REGION DETECTION
+// =====================================
+
+function regionColor(id) {
+  const hue = (id * 47) % 360;
+  const saturation = 75;
+  const lightness = 55;
+
+  const c = (1 - Math.abs(
+    2 * lightness / 100 - 1
+  )) * saturation / 100;
+
+  const x = c * (
+    1 - Math.abs((hue / 60) % 2 - 1)
+  );
+
+  const m = lightness / 100 - c / 2;
+
+  let r = 0, g = 0, b = 0;
+
+  if (hue < 60) {
+    r = c; g = x;
+  } else if (hue < 120) {
+    r = x; g = c;
+  } else if (hue < 180) {
+    g = c; b = x;
+  } else if (hue < 240) {
+    g = x; b = c;
+  } else if (hue < 300) {
+    r = x; b = c;
+  } else {
+    r = c; b = x;
+  }
+
+  return [
+    Math.round((r + m) * 255),
+    Math.round((g + m) * 255),
+    Math.round((b + m) * 255)
+  ];
+}
+
+function detectConnectedRegions(img, mode) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", {
+    willReadFrequently: true
+  });
+
+  const scale = Math.min(
+    1,
+    180 / Math.max(
+      img.naturalWidth,
+      img.naturalHeight
+    )
+  );
+
+  canvas.width = Math.max(
+    1, Math.round(img.naturalWidth * scale)
+  );
+
+  canvas.height = Math.max(
+    1, Math.round(img.naturalHeight * scale)
+  );
+
+  ctx.drawImage(
+    img, 0, 0, canvas.width, canvas.height
+  );
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const imageData = ctx.getImageData(
+    0, 0, width, height
+  );
+
+  const pixels = imageData.data;
+  const total = width * height;
+
+  const regionIds = new Int32Array(total);
+  regionIds.fill(-1);
+
+  const regionSizes = [];
+  const threshold = mode === "manga" ? 34 : 42;
+  const darkLimit = 65;
+
+  let nextRegion = 0;
+
+  function luminance(index) {
+    const p = index * 4;
+
+    return (
+      pixels[p] * 0.299 +
+      pixels[p + 1] * 0.587 +
+      pixels[p + 2] * 0.114
+    );
+  }
+
+  function isBarrier(index) {
+    if (mode !== "manga") return false;
+
+    return luminance(index) < darkLimit;
+  }
+
+  function similar(a, b) {
+    const p1 = a * 4;
+    const p2 = b * 4;
+
+    const dr = pixels[p1] - pixels[p2];
+    const dg = pixels[p1 + 1] - pixels[p2 + 1];
+    const db = pixels[p1 + 2] - pixels[p2 + 2];
+
+    return Math.sqrt(
+      dr * dr + dg * dg + db * db
+    ) <= threshold;
+  }
+
+  // Visit neighboring pixels and group similar areas.
+  for (let start = 0; start < total; start++) {
+    if (regionIds[start] !== -1) continue;
+    if (isBarrier(start)) continue;
+
+    const region = nextRegion++;
+    const queue = [start];
+    let head = 0;
+    let size = 0;
+
+    regionIds[start] = region;
+
+    const startColor = start;
+
+    while (head < queue.length) {
+      const current = queue[head++];
+      size++;
+
+      const x = current % width;
+      const y = Math.floor(current / width);
+
+      const neighbors = [];
+
+      if (x > 0) neighbors.push(current - 1);
+      if (x < width - 1) neighbors.push(current + 1);
+      if (y > 0) neighbors.push(current - width);
+      if (y < height - 1) {
+        neighbors.push(current + width);
+      }
+
+      neighbors.forEach(neighbor => {
+        if (regionIds[neighbor] !== -1) return;
+        if (isBarrier(neighbor)) return;
+
+        if (!similar(startColor, neighbor)) return;
+
+        regionIds[neighbor] = region;
+        queue.push(neighbor);
+      });
+    }
+
+    regionSizes.push(size);
+  }
+
+  // Make a colored overlay while preserving the original image.
+  const overlay = ctx.createImageData(width, height);
+  const output = overlay.data;
+
+  for (let i = 0; i < total; i++) {
+    const region = regionIds[i];
+
+    if (region < 0 || regionSizes[region] < 3) {
+      continue;
+    }
+
+    const color = regionColor(region);
+    const p = i * 4;
+
+    output[p] = color[0];
+    output[p + 1] = color[1];
+    output[p + 2] = color[2];
+    output[p + 3] = 95;
+  }
+
+  const resultCanvas = document.createElement("canvas");
+  resultCanvas.width = width;
+  resultCanvas.height = height;
+
+  const resultCtx = resultCanvas.getContext("2d");
+
+  resultCtx.drawImage(canvas, 0, 0);
+  resultCtx.putImageData(overlay, 0, 0);
+
+  const validRegions = regionSizes
+    .filter(size => size >= 3);
+
+  return {
+    canvas: resultCanvas,
+    count: validRegions.length,
+    largest: [...validRegions]
+      .sort((a, b) => b - a)
+      .slice(0, 10)
+  };
+}
+
+async function showRegionResult(img, title, mode) {
+  const results = document.getElementById(
+    "regionResults"
+  );
+
+  const result = detectConnectedRegions(img, mode);
+
+  const card = document.createElement("div");
+  card.className = "region-card";
+
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+
+  const canvas = result.canvas;
+  canvas.className = "region-canvas";
+
+  const info = document.createElement("div");
+  info.className = "region-info";
+
+  info.textContent =
+    "Detected regions: " + result.count +
+    " | Largest region sizes: " +
+    result.largest.join(", ");
+
+  card.append(heading, canvas, info);
+  results.appendChild(card);
+}
+
+// Detect regions in the uploaded manga.
+document.getElementById("detectManga").onclick =
+async () => {
+  const status = document.getElementById("regionStatus");
+  const file = mangaInput.files[0];
+
+  if (!file) {
+    status.textContent =
+      "Please upload a manga image first.";
+    return;
+  }
+
+  status.textContent = "Detecting manga regions...";
+  document.getElementById("regionResults").innerHTML = "";
+
+  try {
+    const img = await loadImage(
+      document.getElementById("mangaPreview").src
+    );
+
+    await showRegionResult(
+      img,
+      "Manga region map",
+      "manga"
+    );
+
+    status.textContent =
+      "Manga region detection completed.";
+  } catch (error) {
+    console.error(error);
+    status.textContent =
+      "Could not analyze the manga image.";
+  }
+};
+
+// Detect regions in every anime reference.
+document.getElementById("detectAnime").onclick =
+async () => {
+  const status = document.getElementById("regionStatus");
+
+  if (references.length === 0) {
+    status.textContent =
+      "Please upload anime reference images first.";
+    return;
+  }
+
+  status.textContent =
+    "Detecting anime reference regions...";
+
+  document.getElementById("regionResults").innerHTML = "";
+
+  try {
+    for (const item of references) {
+      const img = await loadImage(item.url);
+
+      await showRegionResult(
+        img,
+        "Anime reference: " + item.file.name,
+        "anime"
+      );
+    }
+
+    status.textContent =
+      "Anime reference region detection completed.";
+  } catch (error) {
+    console.error(error);
+    status.textContent =
+      "Some reference images could not be analyzed.";
+  }
+};
+       
 </script>
 
 </body>
