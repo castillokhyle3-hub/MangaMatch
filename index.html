@@ -5,8 +5,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MangaMatch Colorizer</title>
+
 <style>
 * { box-sizing: border-box; }
+
 body {
   margin: 0;
   padding: 20px;
@@ -14,20 +16,34 @@ body {
   color: white;
   font-family: Arial, sans-serif;
 }
+
 main {
   max-width: 650px;
   margin: auto;
 }
-h1 { text-align: center; color: #b69aff; }
-.subtitle { text-align: center; color: #aaa; }
+
+h1 {
+  text-align: center;
+  color: #b69aff;
+}
+
+.subtitle {
+  text-align: center;
+  color: #aaa;
+}
+
 .panel {
   background: #202130;
   padding: 18px;
   margin: 18px 0;
   border-radius: 14px;
 }
-label { display: block; margin-bottom: 12px; }
-input { width: 100%; margin-top: 10px; }
+
+input {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .preview {
   width: 100%;
   max-height: 320px;
@@ -36,21 +52,58 @@ input { width: 100%; margin-top: 10px; }
   border-radius: 10px;
   display: none;
 }
+
 button {
-  width: 100%;
-  padding: 15px;
+  padding: 12px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   background: #9a78ed;
   color: white;
   font-weight: bold;
+  cursor: pointer;
+}
+
+.main-button {
+  width: 100%;
   font-size: 16px;
 }
+
+#palette {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.swatch {
+  background: #303143;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.color-box {
+  height: 65px;
+}
+
+.color-info {
+  padding: 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.color-info button {
+  padding: 7px;
+  font-size: 11px;
+}
+
 #status {
   text-align: center;
   color: #c5b5ff;
-  margin-top: 15px;
 }
+
 footer {
   text-align: center;
   color: #888;
@@ -59,78 +112,212 @@ footer {
 }
 </style>
 </head>
+
 <body>
 <main>
-  <h1>🎨 MangaMatch</h1>
-  <p class="subtitle">Bring your manga to life with anime colors.</p>
 
-  <section class="panel">
-    <h3>1. Upload your manga</h3>
-    <label>
-      Black-and-white manga image
-      <input type="file" id="manga" accept="image/png,image/jpeg,image/webp">
-    </label>
-    <img id="mangaPreview" class="preview" alt="Manga preview">
-  </section>
+<h1>🎨 MangaMatch</h1>
+<p class="subtitle">
+Reference-based manga color studio
+</p>
 
-  <section class="panel">
-    <h3>2. Upload your anime reference</h3>
-    <label>
-      Colored anime screenshot
-      <input type="file" id="reference" accept="image/png,image/jpeg,image/webp">
-    </label>
-    <img id="referencePreview" class="preview" alt="Reference preview">
-  </section>
+<section class="panel">
+<h3>1. Upload your manga</h3>
+<input type="file" id="manga"
+accept="image/png,image/jpeg,image/webp">
+<img id="mangaPreview" class="preview"
+alt="Manga preview">
+</section>
 
-  <section class="panel">
-    <h3>3. Colorization</h3>
-    <p>Upload both images to prepare your coloring project.</p>
-    <button id="colorize">Prepare images</button>
-    <p id="status">Waiting for images...</p>
-  </section>
+<section class="panel">
+<h3>2. Upload your anime reference</h3>
+<input type="file" id="reference"
+accept="image/png,image/jpeg,image/webp">
+<img id="referencePreview" class="preview"
+alt="Anime reference preview">
+</section>
 
-  <footer>
-    MangaMatch · Reference-based manga coloring
-  </footer>
+<section class="panel">
+<h3>3. Anime color analyzer</h3>
+<p>
+Extract the most prominent colors from your
+anime reference image.
+</p>
+
+<button class="main-button" id="analyze">
+Analyze colors
+</button>
+
+<p id="status">Waiting for reference image...</p>
+
+<div id="palette"></div>
+</section>
+
+<section class="panel">
+<h3>4. Colorization</h3>
+<p>
+Your images and palette will be prepared for
+reference-based manga coloring.
+</p>
+<p id="colorStatus">
+AI coloring engine not connected yet.
+</p>
+</section>
+
+<footer>
+MangaMatch · Free Color Studio
+</footer>
+
 </main>
 
 <script>
-function preview(inputId, previewId) {
-  const input = document.getElementById(inputId);
-  const img = document.getElementById(previewId);
+const mangaInput = document.getElementById("manga");
+const refInput = document.getElementById("reference");
 
+function preview(input, image) {
   input.addEventListener("change", () => {
     const file = input.files[0];
     if (!file) return;
 
     if (!file.type.startsWith("image/") ||
         file.size > 10 * 1024 * 1024) {
-      alert("Choose an image under 10 MB.");
+      alert("Please choose an image under 10 MB.");
       input.value = "";
       return;
     }
 
-    img.src = URL.createObjectURL(file);
-    img.style.display = "block";
+    image.src = URL.createObjectURL(file);
+    image.style.display = "block";
   });
 }
 
-preview("manga", "mangaPreview");
-preview("reference", "referencePreview");
+preview(mangaInput,
+  document.getElementById("mangaPreview"));
 
-document.getElementById("colorize").onclick = () => {
-  const manga = document.getElementById("manga").files[0];
-  const ref = document.getElementById("reference").files[0];
+preview(refInput,
+  document.getElementById("referencePreview"));
+
+function getColors(img) {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", {
+    willReadFrequently: true
+  });
+
+  const scale = Math.min(1, 100 / Math.max(
+    img.naturalWidth, img.naturalHeight
+  ));
+
+  canvas.width = Math.max(1,
+    Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1,
+    Math.round(img.naturalHeight * scale));
+
+  ctx.drawImage(img, 0, 0,
+    canvas.width, canvas.height);
+
+  const pixels = ctx.getImageData(
+    0, 0, canvas.width, canvas.height
+  ).data;
+
+  const counts = {};
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 128) continue;
+
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+
+    // Group similar colors into one bucket.
+    const qr = Math.floor(r / 16) * 16;
+    const qg = Math.floor(g / 16) * 16;
+    const qb = Math.floor(b / 16) * 16;
+
+    const key = [qr, qg, qb].join(",");
+
+    counts[key] = (counts[key] || 0) + 1;
+  }
+
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([key]) => {
+      return key.split(",").map(Number);
+    });
+}
+
+function toHex(rgb) {
+  return "#" + rgb.map(v =>
+    v.toString(16).padStart(2, "0")
+  ).join("").toUpperCase();
+}
+
+document.getElementById("analyze").onclick = () => {
+  const file = refInput.files[0];
   const status = document.getElementById("status");
+  const palette = document.getElementById("palette");
 
-  if (!manga || !ref) {
-    status.textContent = "Please upload both images first.";
+  if (!file) {
+    status.textContent =
+      "Upload an anime reference first.";
     return;
   }
 
-  status.textContent =
-    "Images ready! The AI coloring engine will be connected in a later step.";
+  const img = document.getElementById("referencePreview");
+
+  if (!img.complete || !img.naturalWidth) {
+    status.textContent = "Please wait for the image to load.";
+    return;
+  }
+
+  try {
+    const colors = getColors(img);
+    palette.innerHTML = "";
+
+    colors.forEach((rgb, index) => {
+      const hex = toHex(rgb);
+
+      const card = document.createElement("div");
+      card.className = "swatch";
+
+      const colorBox = document.createElement("div");
+      colorBox.className = "color-box";
+      colorBox.style.backgroundColor = hex;
+
+      const info = document.createElement("div");
+      info.className = "color-info";
+
+      const label = document.createElement("span");
+      label.textContent = "Color " + (index + 1)
+        + " · " + hex;
+
+      const copy = document.createElement("button");
+      copy.textContent = "Copy";
+
+      copy.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(hex);
+          copy.textContent = "Copied!";
+        } catch {
+          copy.textContent = hex;
+        }
+      };
+
+      info.append(label, copy);
+      card.append(colorBox, info);
+      palette.appendChild(card);
+    });
+
+    status.textContent =
+      "Analysis complete! " + colors.length +
+      " prominent colors extracted.";
+
+  } catch (error) {
+    status.textContent =
+      "Could not analyze this image. Try another.";
+  }
 };
 </script>
+
 </body>
 </html>
