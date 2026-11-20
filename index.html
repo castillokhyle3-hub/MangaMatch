@@ -39,9 +39,17 @@ h1 {
   border-radius: 14px;
 }
 
-input {
+input, select {
   width: 100%;
   margin-top: 12px;
+}
+
+select {
+  padding: 10px;
+  background: #303143;
+  color: white;
+  border: 1px solid #555;
+  border-radius: 8px;
 }
 
 button {
@@ -105,7 +113,7 @@ button {
 
 #palette, .individual-palette {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   margin-top: 14px;
 }
@@ -114,19 +122,20 @@ button {
   background: #303143;
   border-radius: 10px;
   overflow: hidden;
+  min-width: 0;
 }
 
 .color-box {
-  height: 60px;
+  height: 55px;
 }
 
 .color-info {
-  padding: 9px;
+  padding: 8px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .color-info button {
@@ -144,6 +153,12 @@ footer {
   color: #888;
   font-size: 12px;
   margin-top: 30px;
+}
+
+@media (max-width: 420px) {
+  #palette, .individual-palette {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>
 </head>
@@ -185,9 +200,23 @@ No reference images added.
 
 <section class="panel">
 <h3>3. Anime color analyzer</h3>
+
 <p>
-Analyze every reference separately and create
-one combined palette.
+Choose how many representative colors to extract.
+More colors can preserve more subtle variations.
+</p>
+
+<label for="colorQuality">Palette detail:</label>
+
+<select id="colorQuality">
+  <option value="64">64 colors · Standard</option>
+  <option value="128" selected>128 colors · Detailed</option>
+  <option value="256">256 colors · Extra detailed</option>
+</select>
+
+<p>
+The analyzer uses Median Cut quantization to group similar
+colors instead of keeping only the most frequent colors.
 </p>
 
 <button class="main-button" id="analyze">
@@ -195,13 +224,12 @@ Analyze all references
 </button>
 
 <p id="status">Waiting for reference images...</p>
-
 </section>
 
 <section class="panel">
 <h3>4. Individual palettes</h3>
 <p>
-Each reference gets its own set of extracted colors.
+Each reference gets its own extracted color palette.
 </p>
 
 <div id="individualResults"></div>
@@ -337,7 +365,6 @@ function clearResults() {
 
 refInput.addEventListener("change", () => {
   const files = Array.from(refInput.files);
-
   let added = 0;
 
   files.forEach(file => {
@@ -367,7 +394,6 @@ refInput.addEventListener("change", () => {
   }
 
   renderReferences();
-
   refInput.value = "";
 });
 
@@ -384,8 +410,8 @@ function loadImage(url) {
   });
 }
 
-// Count colors from an image.
-function getColorCounts(img) {
+// Extract pixel colors from a smaller copy of the image.
+function getColorSamples(img) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", {
     willReadFrequently: true
@@ -393,7 +419,7 @@ function getColorCounts(img) {
 
   const scale = Math.min(
     1,
-    100 / Math.max(img.naturalWidth, img.naturalHeight)
+    80 / Math.max(img.naturalWidth, img.naturalHeight)
   );
 
   canvas.width = Math.max(
@@ -404,35 +430,125 @@ function getColorCounts(img) {
     1, Math.round(img.naturalHeight * scale)
   );
 
-  ctx.drawImage(img, 0, 0,
-    canvas.width, canvas.height);
+  ctx.drawImage(
+    img, 0, 0, canvas.width, canvas.height
+  );
 
   const pixels = ctx.getImageData(
     0, 0, canvas.width, canvas.height
   ).data;
 
-  const counts = {};
+  const samples = [];
 
   for (let i = 0; i < pixels.length; i += 4) {
     if (pixels[i + 3] < 128) continue;
 
-    const r = Math.floor(pixels[i] / 16) * 16;
-    const g = Math.floor(pixels[i + 1] / 16) * 16;
-    const b = Math.floor(pixels[i + 2] / 16) * 16;
-
-    const key = [r, g, b].join(",");
-
-    counts[key] = (counts[key] || 0) + 1;
+    samples.push([
+      pixels[i],
+      pixels[i + 1],
+      pixels[i + 2]
+    ]);
   }
 
-  return counts;
+  return samples;
 }
 
-function topColors(counts) {
-  return Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([key]) => key.split(",").map(Number));
+// Find the color range inside a group.
+function getColorRange(colors) {
+  const min = [255, 255, 255];
+  const max = [0, 0, 0];
+
+  colors.forEach(color => {
+    for (let c = 0; c < 3; c++) {
+      min[c] = Math.min(min[c], color[c]);
+      max[c] = Math.max(max[c], color[c]);
+    }
+  });
+
+  return [
+    max[0] - min[0],
+    max[1] - min[1],
+    max[2] - min[2]
+  ];
+}
+
+// Create a representative color from a group.
+function averageColor(colors) {
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  colors.forEach(color => {
+    r += color[0];
+    g += color[1];
+    b += color[2];
+  });
+
+  return [
+    Math.round(r / colors.length),
+    Math.round(g / colors.length),
+    Math.round(b / colors.length)
+  ];
+}
+
+// Median Cut color quantization.
+function quantizeColors(samples, maxColors) {
+  if (samples.length === 0) return [];
+
+  let boxes = [samples];
+
+  while (boxes.length < maxColors) {
+    let bestIndex = -1;
+    let bestScore = -1;
+    let bestChannel = 0;
+
+    boxes.forEach((box, index) => {
+      if (box.length < 2) return;
+
+      const ranges = getColorRange(box);
+      const channel = ranges.indexOf(Math.max(...ranges));
+      const score = ranges[channel] * box.length;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = index;
+        bestChannel = channel;
+      }
+    });
+
+    if (bestIndex === -1) break;
+
+    const box = boxes[bestIndex];
+
+    box.sort((a, b) =>
+      a[bestChannel] - b[bestChannel]
+    );
+
+    const middle = Math.floor(box.length / 2);
+
+    const firstHalf = box.slice(0, middle);
+    const secondHalf = box.slice(middle);
+
+    if (firstHalf.length === 0 ||
+        secondHalf.length === 0) {
+      break;
+    }
+
+    boxes.splice(
+      bestIndex,
+      1,
+      firstHalf,
+      secondHalf
+    );
+  }
+
+  return boxes
+    .map(box => ({
+      color: averageColor(box),
+      amount: box.length
+    }))
+    .sort((a, b) => b.amount - a.amount)
+    .map(item => item.color);
 }
 
 function toHex(rgb) {
@@ -497,20 +613,28 @@ async () => {
     return;
   }
 
+  const colorAmount = Number(
+    document.getElementById("colorQuality").value
+  );
+
   status.textContent = "Analyzing references...";
   combinedStatus.textContent = "Working...";
   combinedPalette.innerHTML = "";
   individualResults.innerHTML = "";
 
-  const combinedCounts = {};
+  const combinedSamples = [];
 
   try {
     for (const item of references) {
       const img = await loadImage(item.url);
-      const counts = getColorCounts(img);
+      const samples = getColorSamples(img);
 
-      // Individual palette
-      const individualColors = topColors(counts);
+      // Keep the original pixel samples for analysis.
+      combinedSamples.push(...samples);
+
+      // Create the individual palette.
+      const individualColors =
+        quantizeColors(samples, colorAmount);
 
       const result = document.createElement("div");
       result.className = "reference-card";
@@ -526,29 +650,29 @@ async () => {
       individualResults.appendChild(result);
 
       renderPalette(palette, individualColors);
-
-      // Add this reference's color counts to the combined palette.
-      Object.entries(counts).forEach(([key, amount]) => {
-        combinedCounts[key] =
-          (combinedCounts[key] || 0) + amount;
-      });
     }
 
-    const combinedColors = topColors(combinedCounts);
+    // Create one palette using samples from every reference.
+    const combinedColors =
+      quantizeColors(combinedSamples, colorAmount);
 
     renderPalette(combinedPalette, combinedColors);
 
     status.textContent =
       "Success! " + references.length +
-      " individual reference palettes created.";
+      " individual palettes created.";
 
     combinedStatus.textContent =
-      "Combined palette created from " +
+      combinedColors.length +
+      " representative colors collected from " +
       references.length + " references.";
 
   } catch (error) {
+    console.error(error);
+
     status.textContent =
       "Some images could not be analyzed. Try again.";
+
     combinedStatus.textContent =
       "Combined analysis was not completed.";
   }
@@ -556,5 +680,4 @@ async () => {
 </script>
 
 </body>
-  </html>
-  
+</html>
